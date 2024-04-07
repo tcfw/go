@@ -15,6 +15,7 @@ var knownOS = map[string]bool{
 	"aix":       true,
 	"android":   true,
 	"darwin":    true,
+	"beehive":   true,
 	"dragonfly": true,
 	"freebsd":   true,
 	"hurd":      true,

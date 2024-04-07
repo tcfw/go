@@ -3,9 +3,10 @@
 package registry
 
 import (
-	"internal/syscall/windows/sysdll"
 	"syscall"
 	"unsafe"
+
+	"golang.org/x/sys/windows"
 )
 
 var _ unsafe.Pointer
@@ -37,8 +38,8 @@ func errnoErr(e syscall.Errno) error {
 }
 
 var (
-	modadvapi32 = syscall.NewLazyDLL(sysdll.Add("advapi32.dll"))
-	modkernel32 = syscall.NewLazyDLL(sysdll.Add("kernel32.dll"))
+	modadvapi32 = windows.NewLazySystemDLL("advapi32.dll")
+	modkernel32 = windows.NewLazySystemDLL("kernel32.dll")
 
 	procRegCreateKeyExW           = modadvapi32.NewProc("RegCreateKeyExW")
 	procRegDeleteKeyW             = modadvapi32.NewProc("RegDeleteKeyW")
