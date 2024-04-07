@@ -138,6 +138,7 @@ const (
 	ELFOSABI_AROS       OSABI = 15  /* Amiga Research OS */
 	ELFOSABI_FENIXOS    OSABI = 16  /* The FenixOS highly scalable multi-core OS */
 	ELFOSABI_CLOUDABI   OSABI = 17  /* Nuxi CloudABI */
+	ELFOSABI_BEEHIVE OSABI = 19       /* Beehive */
 	ELFOSABI_ARM        OSABI = 97  /* ARM */
 	ELFOSABI_STANDALONE OSABI = 255 /* Standalone (embedded) application */
 )
@@ -161,6 +162,7 @@ var osabiStrings = []intName{
 	{15, "ELFOSABI_AROS"},
 	{16, "ELFOSABI_FENIXOS"},
 	{17, "ELFOSABI_CLOUDABI"},
+	{19, "ELFOSABI_BEEHIVE"},
 	{97, "ELFOSABI_ARM"},
 	{255, "ELFOSABI_STANDALONE"},
 }

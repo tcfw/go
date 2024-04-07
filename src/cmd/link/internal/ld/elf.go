@@ -2294,6 +2294,8 @@ elfobj:
 		osabi = elf.ELFOSABI_OPENBSD
 	case objabi.Hdragonfly:
 		osabi = elf.ELFOSABI_NONE
+	case objabi.Hbeehive:
+		osabi = elf.ELFOSABI_BEEHIVE
 	}
 	eh.Ident[elf.EI_OSABI] = byte(osabi)
 
