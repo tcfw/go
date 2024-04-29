@@ -81,6 +81,9 @@
 #define SYSCALL_dev_claim			152
 #define SYSCALL_dev_release			153
 
+#define FUTEX_OP_wake	1
+#define FUTEX_OP_sleep	2
+
 TEXT runtime·exit(SB),NOSPLIT|NOFRAME,$0-4
 	MOVD	$SYSCALL_exit_group, R0
 	MOVW	code+0(FP), R1
@@ -193,7 +196,31 @@ ok:
 	RET
 
 TEXT runtime·futexwakeup(SB),NOSPLIT|NOFRAME,$0
+	MOVD	$SYSCALL_futex, R0
+	MOVD	addr+0(FP), R1
+	MOVD	$FUTEX_OP_wake, R2
+	MOVD	cnt+8(FP), R3
+	MOVD	$0, R4
+	SVC
 	RET
 
 TEXT runtime·futexsleep(SB),NOSPLIT|NOFRAME,$0
+	MOVD	ns+0(FP), R3
+	MOVD	R3, R5
+	MOVW	$1000000, R4
+	UDIV	R4, R3
+	MOVD	R3, 8(RSP)
+	MUL		R3, R4
+	SUB		R4, R5
+	MOVW	$1000, R4
+	MUL		R4, R5
+	MOVD	R5, 16(RSP)
+
+	//futex(*addr, FUTEX_OP_sleep, val, &ts)
+	MOVD	$SYSCALL_futex, R0
+	MOVD	addr+0(FP), R1
+	MOVD	$FUTEX_OP_sleep, R2
+	MOVD	val+8(FP), R3
+	ADD		$8, RSP, R4
+	SVC
 	RET
