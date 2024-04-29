@@ -314,6 +314,7 @@ func cgocallbackg(fn, frame unsafe.Pointer, ctxt uintptr) {
 	// save syscall* and let reentersyscall restore them.
 	savedsp := unsafe.Pointer(gp.syscallsp)
 	savedpc := gp.syscallpc
+	savedbp := gp.syscallbp
 	exitsyscall() // coming out of cgo call
 	gp.m.incgo = false
 	if gp.m.isextra {
@@ -345,7 +346,7 @@ func cgocallbackg(fn, frame unsafe.Pointer, ctxt uintptr) {
 	osPreemptExtEnter(gp.m)
 
 	// going back to cgo call
-	reentersyscall(savedpc, uintptr(savedsp))
+	reentersyscall(savedpc, uintptr(savedsp), savedbp)
 
 	gp.m.winsyscall = winsyscall
 }
@@ -671,30 +672,15 @@ func cgoCheckUnknownPointer(p unsafe.Pointer, msg string) (base, i uintptr) {
 		if base == 0 {
 			return
 		}
-		if goexperiment.AllocHeaders {
-			tp := span.typePointersOfUnchecked(base)
-			for {
-				var addr uintptr
-				if tp, addr = tp.next(base + span.elemsize); addr == 0 {
-					break
-				}
-				pp := *(*unsafe.Pointer)(unsafe.Pointer(addr))
-				if cgoIsGoPointer(pp) && !isPinned(pp) {
-					panic(errorString(msg))
-				}
+		tp := span.typePointersOfUnchecked(base)
+		for {
+			var addr uintptr
+			if tp, addr = tp.next(base + span.elemsize); addr == 0 {
+				break
 			}
-		} else {
-			n := span.elemsize
-			hbits := heapBitsForAddr(base, n)
-			for {
-				var addr uintptr
-				if hbits, addr = hbits.next(); addr == 0 {
-					break
-				}
-				pp := *(*unsafe.Pointer)(unsafe.Pointer(addr))
-				if cgoIsGoPointer(pp) && !isPinned(pp) {
-					panic(errorString(msg))
-				}
+			pp := *(*unsafe.Pointer)(unsafe.Pointer(addr))
+			if cgoIsGoPointer(pp) && !isPinned(pp) {
+				panic(errorString(msg))
 			}
 		}
 		return

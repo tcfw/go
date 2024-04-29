@@ -3,8 +3,8 @@ module std
 go 1.21
 
 require (
-	golang.org/x/crypto v0.22.0
-	golang.org/x/net v0.24.1-0.20240405150138-b67a0f053553
+	golang.org/x/crypto v0.22.1-0.20240415215343-5defcc193aab
+	golang.org/x/net v0.24.1-0.20240405221309-ec05fdcd7114
 )
 
 require (
