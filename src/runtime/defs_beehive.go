@@ -4,10 +4,6 @@
 
 package runtime
 
-type sigset struct {
-	__bits [4]uint32
-}
-
 const (
 	_ENOSYS     = 0x1
 	_EINTR      = 0x2

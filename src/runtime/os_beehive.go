@@ -5,6 +5,7 @@
 package runtime
 
 import (
+	"internal/abi"
 	"internal/runtime/atomic"
 	"unsafe"
 )
@@ -17,14 +18,13 @@ func osyield_no_g() {
 }
 
 func osinit() {
-	ncpu = int32(getncpu())
+	ncpu = int32(getnCPU())
 	if physPageSize == 0 {
-		physPageSize = getPageSize()
+		physPageSize = uintptr(getPageSize())
 	}
 }
 
 func setThreadCPUProfiler(hz int32) {
-	setThreadCPUProfilerHz(hz)
 }
 
 func setProcessCPUProfiler(hz int32)
@@ -49,14 +49,12 @@ func mpreinit(mp *m) {
 // Called on the new thread, cannot allocate memory.
 func minit() {
 	getg().m.procid = gettid()
-	minitSignals()
 }
 
 // Called from dropm to undo the effect of an minit.
 //
 //go:nosplit
 func unminit() {
-	unminitSignals()
 	getg().m.procid = 0
 }
 
@@ -64,11 +62,16 @@ func unminit() {
 // resources in minit, semacreate, or elsewhere. Do not take locks after calling this.
 func mdestroy(mp *m) {}
 
+func threadStart(f, s, a uintptr) int
+
+func threadInit()
+
 // May run with m.p==nil, so write barriers are not allowed.
 //
 //go:nowritebarrierrec
 func newosproc(mp *m) {
-
+	stk := unsafe.Pointer(mp.g0.stack.hi)
+	threadStart(abi.FuncPCABI0(threadInit), uintptr(stk), uintptr(unsafe.Pointer(mp)))
 }
 
 func readRandom(r []byte) int {
@@ -98,9 +101,16 @@ func usleep_no_g(usec uint32) {
 	usleep(usec)
 }
 
+//go:noescape
+func writeConsole(p uintptr, n int32) int32
+
 // write1 calls the write system call.
 // It returns a non-negative number of bytes written or a negative errno value.
 func write1(fd uintptr, p unsafe.Pointer, n int32) int32 {
+	if fd <= 2 {
+		return writeConsole(uintptr(p), n)
+	}
+
 	return -1
 }
 
@@ -137,8 +147,8 @@ func raise(sig uint32) {
 func kill(pid uint64, tid uint64, sig uint32)
 
 func gettid() uint64
-
-func getncpu() uint32
+func getnCPU() uint32
+func getPageSize() uint32
 
 type itimerval struct {
 	it_interval timeval
@@ -147,12 +157,15 @@ type itimerval struct {
 
 /* m */
 
-type mOS struct{}
+type mOS struct {
+	preemptExtLock uint32 // preemptExtLock synchronizes preemptM with entry/exit
+}
 
 /* SIGNAL */
 
 const (
-	_NSIG        = 256
+	_NSIG = 256
+
 	_SI_USER     = 0 /* empirically true, but not what headers say */
 	_SIG_BLOCK   = 1
 	_SIG_UNBLOCK = 2
@@ -164,37 +177,7 @@ const (
 // number.
 const sigPerThreadSyscall = 1 << 31
 
-//go:nosplit
-//go:nowritebarrierrec
-func getsig(i uint32) uintptr
-
-//go:nosplit
-//go:nowritebarrierrec
-func setsigstack(i uint32)
-
-// setSignalstackSP sets the ss_sp field of a stackt.
-//
-//go:nosplit
-func setSignalstackSP(s *stackt, sp uintptr) {
-	*(*uintptr)(unsafe.Pointer(&s.ss_sp)) = sp
-}
-
-//go:nosplit
-//go:nowritebarrierrec
-func setsig(i uint32, fn uintptr) {}
-
-//go:nosplit
-//go:nowritebarrierrec
-func sigaddset(mask *sigset, i int) {}
-
-func sigdelset(mask *sigset, i int) {}
-
-//go:nosplit
-//go:nowritebarrierrec
-func sigprocmask(how int32, new, old *sigset) {}
-
-//go:nosplit
-func (c *sigctxt) fixsigcode(sig uint32) {}
+type sigset struct{}
 
 //go:nosplit
 func runPerThreadSyscall() {
@@ -209,10 +192,65 @@ func (c *sigctxt) sigFromUser() bool {
 	return c.sigcode() == _SI_USER
 }
 
-func getPageSize() uintptr {
-	return 0
-}
+func nanotime1() int64
+
+//go:noescape
+func getclock_rtc(tval uintptr)
 
 func walltime() (sec int64, nsec int32) {
-	return 0, 0
+	var val timeval
+
+	getclock_rtc(uintptr(unsafe.Pointer(&val)))
+
+	return val.tv_sec, int32(val.tv_usec)
+}
+
+const preemptMSupported = false
+
+// suspendLock protects simultaneous SuspendThread operations from
+// suspending each other.
+var suspendLock mutex
+
+func threadPreempt(tid uint64, pc uintptr, sp uintptr) int
+
+func preemptM(mp *m) {
+	if mp == getg().m {
+		throw("self-preempt")
+	}
+
+	// Synchronize with external code that may try to ExitProcess.
+	if !atomic.Cas(&mp.preemptExtLock, 0, 1) {
+		// External code is running. Fail the preemption
+		// attempt.
+		mp.preemptGen.Add(1)
+		return
+	}
+
+	if mp.procid == 0 {
+		// The M hasn't been minit'd yet (or was just unminit'd).
+		atomic.Store(&mp.preemptExtLock, 0)
+		mp.preemptGen.Add(1)
+		return
+	}
+
+	// Serialize thread suspension. SuspendThread is asynchronous,
+	// so it's otherwise possible for two threads to suspend each
+	// other and deadlock. We must hold this lock until after
+	// GetThreadContext, since that blocks until the thread is
+	// actually suspended.
+	lock(&suspendLock)
+
+	if threadPreempt(mp.procid, abi.FuncPCABI0(asyncPreempt), 0) != 0 {
+		//thread was not in a preemptable state
+		atomic.Store(&mp.preemptExtLock, 0)
+		mp.preemptGen.Add(1)
+		unlock(&suspendLock)
+		return
+	}
+
+	unlock(&suspendLock)
+	atomic.Store(&mp.preemptExtLock, 0)
+
+	// Acknowledge the preemption.
+	mp.preemptGen.Add(1)
 }

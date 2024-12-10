@@ -8,7 +8,8 @@ import "unsafe"
 
 //go:nosplit
 func mmap(addr unsafe.Pointer, n uintptr, flags int32) (unsafe.Pointer, int) {
-	return sysMmap(addr, n, flags)
+	p, erri := sysMmap(addr, n, flags)
+	return unsafe.Pointer(p), erri
 }
 
 //go:nosplit
@@ -16,5 +17,3 @@ func mmap(addr unsafe.Pointer, n uintptr, flags int32) (unsafe.Pointer, int) {
 func munmap(addr unsafe.Pointer, n uintptr) {
 	sysMunmap(addr, n)
 }
-
-func nanotime1() int64

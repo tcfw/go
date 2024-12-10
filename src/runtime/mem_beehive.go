@@ -8,7 +8,7 @@ import (
 	"unsafe"
 )
 
-func sysMmap(addr unsafe.Pointer, n uintptr, flags int32) (p unsafe.Pointer, err int)
+func sysMmap(addr unsafe.Pointer, n uintptr, flags int32) (p uintptr, err int)
 
 func sysMunmap(addr unsafe.Pointer, n uintptr)
 
@@ -27,9 +27,11 @@ func sysAllocOS(n uintptr) unsafe.Pointer {
 			print("runtime: mmap: too much locked memory (check 'ulimit -l').\n")
 			exit(2)
 		}
+
 		return nil
 	}
-	return p
+
+	return unsafe.Pointer(p)
 }
 
 func sysUnusedOS(v unsafe.Pointer, n uintptr) {

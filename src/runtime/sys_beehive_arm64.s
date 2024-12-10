@@ -22,6 +22,7 @@
 #define SYSCALL_get_cpu				9
 #define SYSCALL_running_time		10
 #define SYSCALL_proc_info			11
+#define SYSCALL_get_time			15
 #define SYSCALL_sched_getaffinity	20
 #define SYSCALL_sched_setaffinity	21
 #define SYSCALL_sched_getpriority	22
@@ -29,6 +30,8 @@
 #define SYSCALL_sched_yield			24
 #define SYSCALL_exec				30
 #define SYSCALL_clone				31
+#define SYSCALL_thread_start		32
+#define SYSCALL_thread_preempt		33
 #define SYSCALL_kname				40
 #define SYSCALL_sysinfo				41
 #define SYSCALL_set_hostname		42
@@ -87,7 +90,9 @@
 TEXT runtime·exit(SB),NOSPLIT|NOFRAME,$0-4
 	MOVD	$SYSCALL_exit_group, R0
 	MOVW	code+0(FP), R1
+
 	SVC
+
 	RET
 
 // func exitThread(wait *atomic.Uint32)
@@ -95,50 +100,59 @@ TEXT runtime·exitThread(SB),NOSPLIT|NOFRAME,$0-8
 	MOVD	$SYSCALL_exit, R0
 	MOVW	$0, R1	// exit code
 	MOVD	wait+0(FP), R2
+
 	SVC
+
 	JMP	0(PC)
 
 TEXT runtime·gettid(SB),NOSPLIT,$0-8
 	MOVD	$SYSCALL_get_tid, R0
+
 	SVC
+
 	MOVW	R0, ret+0(FP)
 	RET
 
-TEXT runtime·getpid(SB),NOSPLIT|NOFRAME,$0-8
+TEXT runtime·getpid(SB),NOSPLIT,$0-8
 	MOVD	$SYSCALL_get_pid, R0
+
 	SVC
+
 	MOVD	R0, ret+0(FP)
 	RET
 
-TEXT runtime·sysMmap(SB),NOSPLIT|NOFRAME,$0
+TEXT runtime·sysMmap(SB),NOSPLIT,$0
 	MOVD	$SYSCALL_mem_map, R0
-
-	MOVD	addr+0(FP), R1
-	MOVD	n+8(FP), R2
-	MOVW	flags+16(FP), R3
+	MOVD	$0, R1
+	MOVD	addr+0(FP), R2
+	MOVD	n+8(FP), R3
+	MOVW	flags+16(FP), R4
+	MOVD	$0, R5
 
 	SVC
 
-	CMN	$4095, R0
-	BCC	ok
-	NEG	R0,R0
-	MOVD	$0, p+32(FP)
-	MOVD	R0, err+40(FP)
+	CMN		$4095, R0
+	BCC		mmapOk
+	NEG		R0, R0
+	MOVD	$0, p+24(FP)
+	MOVD	R0, err+32(FP)
 	RET
-ok:
-	MOVD	R0, p+32(FP)
-	MOVD	$0, err+40(FP)
+mmapOk:
+	MOVD	R0, p+24(FP)
+	MOVD	$0, err+32(FP)
 	RET
 
-TEXT runtime·sysMunmap(SB),NOSPLIT|NOFRAME,$0
+TEXT runtime·sysMunmap(SB),NOSPLIT,$0
 	MOVD	$SYSCALL_mem_umap, R0
 	MOVD	addr+0(FP), R1
 	MOVD	n+8(FP), R2
+
 	SVC
-	CMN	$4095, R0
-	BCC	cool
+
+	CMN		$4095, R0
+	BCC		munmapOk
 	MOVD	R0, 0xf0(R0)
-cool:
+munmapOk:
 	RET
 
 TEXT runtime·osyield(SB),NOSPLIT|NOFRAME,$0
@@ -147,24 +161,39 @@ TEXT runtime·osyield(SB),NOSPLIT|NOFRAME,$0
 	RET
 
 TEXT runtime·nanotime1(SB),NOSPLIT,$0-8
+	MOVD $SYSCALL_get_time, R0
+	MOVD $1, R1 //monotonic
+
+	SVC
+
+	MOVD	R0, ret+0(FP)
+
 	RET
 
+TEXT runtime·getclock_rtc(SB),NOSPLIT,$0-8
+	MOVD $SYSCALL_get_time, R0
+	MOVD $0, R1 //RTC
+	MOVD tval+0(FP), R2
+	SVC
+	RET
+
+// func usleep(usec uint32)
 TEXT runtime·usleep(SB),NOSPLIT,$24-4
 	MOVWU	usec+0(FP), R3
 	MOVD	R3, R5
 	MOVW	$1000000, R4
 	UDIV	R4, R3
 	MOVD	R3, 8(RSP)
-	MUL	R3, R4
-	SUB	R4, R5
+	MUL		R3, R4
+	SUB		R4, R5
 	MOVW	$1000, R4
-	MUL	R4, R5
+	MUL		R4, R5
 	MOVD	R5, 16(RSP)
 
 	// nanosleep(&ts, 0)
-	ADD	$8, RSP, R1
-	MOVD	$0, R2
 	MOVD	$SYSCALL_nanosleep, R0
+	ADD		$8, RSP, R1
+	MOVD	$0, R2
 	SVC
 	RET
 
@@ -176,9 +205,16 @@ TEXT runtime·kill(SB),NOSPLIT|NOFRAME,$0-16
 	SVC
 	RET
 
-TEXT runtime·getncpu(SB),NOSPLIT,$0-4
+TEXT runtime·getnCPU(SB),NOSPLIT,$0-4
 	MOVD	$SYSCALL_sysinfo, R0
-	MOVD	1, R1 //ncpus
+	MOVD	$1, R1 //ncpus
+	SVC
+	MOVW	R0, ret+0(FP)
+	RET
+
+TEXT runtime·getPageSize(SB),NOSPLIT,$0-4
+	MOVD	$SYSCALL_sysinfo, R0
+	MOVD	$2, R1 //page_size
 	SVC
 	MOVW	R0, ret+0(FP)
 	RET
@@ -201,26 +237,86 @@ TEXT runtime·futexwakeup(SB),NOSPLIT|NOFRAME,$0
 	MOVD	$FUTEX_OP_wake, R2
 	MOVD	cnt+8(FP), R3
 	MOVD	$0, R4
+	MOVD	$0, R5
+
 	SVC
 	RET
 
 TEXT runtime·futexsleep(SB),NOSPLIT|NOFRAME,$0
-	MOVD	ns+0(FP), R3
-	MOVD	R3, R5
-	MOVW	$1000000, R4
-	UDIV	R4, R3
-	MOVD	R3, 8(RSP)
-	MUL		R3, R4
-	SUB		R4, R5
-	MOVW	$1000, R4
-	MUL		R4, R5
-	MOVD	R5, 16(RSP)
-
-	//futex(*addr, FUTEX_OP_sleep, val, &ts)
+	//futex(*addr, FUTEX_OP_sleep, val, val2, ts_ns)
 	MOVD	$SYSCALL_futex, R0
 	MOVD	addr+0(FP), R1
 	MOVD	$FUTEX_OP_sleep, R2
-	MOVD	val+8(FP), R3
-	ADD		$8, RSP, R4
+	MOVW	val+8(FP), R3
+	MOVD	$0, R4
+	MOVD	ns+16(FP), R5
+
 	SVC
+
+	RET
+
+TEXT emptyfunc<>(SB),0,$0-0
+	RET
+
+TEXT runtime·threadInit(SB),NOSPLIT|NOFRAME,$0
+	// set up g
+	MOVD	m_g0(R0), g
+	MOVD	R0, g_m(g)
+	BL	emptyfunc<>(SB)	 // fault if stack check is wrong
+	BL	runtime·mstart(SB)
+
+	MOVD	$2, R8	// crash (not reached)
+	MOVD	R8, (R8)
+	RET
+
+TEXT runtime·threadStart(SB),NOSPLIT|NOFRAME,$0-4
+	MOVD	$SYSCALL_thread_start, R0
+	MOVD	f+0(FP), R1
+	MOVD	s+8(FP), R2
+	MOVD	a+16(FP), R3
+
+	SVC
+
+	MOVW	R0, ret+0(FP)
+	RET
+
+TEXT runtime·writeConsole(SB),NOSPLIT|NOFRAME,$0
+	MOVD	$SYSCALL_console_write, R0
+	MOVD	p+0(FP), R1
+	MOVD	n+8(FP), R2
+
+	SVC
+
+	MOVW	R0, ret+0(FP)
+	RET
+
+TEXT runtime·sigaction(SB),NOSPLIT|NOFRAME,$0
+	MOVD	$SYSCALL_sig_action, R0
+	MOVW	i+0(FP),R1
+	MOVD	new+4(FP), R2
+	MOVD	old+12(FP), R3
+
+	SVC
+
+	MOVW	R0, ret+0(FP)
+	RET
+
+TEXT runtime·raiseproc(SB),NOSPLIT|NOFRAME,$0
+	MOVD	$SYSCALL_get_pid, R0
+	SVC
+	MOVD	R0, R1
+	MOVD	$SYSCALL_kill, R0
+	MOVW	sig+0(FP), R2
+	SVC
+	RET
+
+TEXT runtime·threadPreempt(SB),NOSPLIT|NOFRAME,$0-4
+	MOVD	$SYSCALL_thread_preempt, R0
+	MOVD	tid+0(FP), R1
+	MOVD	pc+4(FP), R2
+	MOVD	sp+12(FP), R3
+
+	SVC
+
+	MOVW	R0, ret+0(FP)
 	RET

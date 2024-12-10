@@ -5,8 +5,11 @@
 #include "textflag.h"
 
 TEXT _rt0_arm64_beehive(SB),NOSPLIT|NOFRAME,$0
-	MOVD	$runtime·rt0_go(SB), R2
-	BL	(R2)
+	MOVD	0(RSP), R0	// argc
+	ADD		$8, RSP, R1	// argv
+	MOVD	$runtime·rt0_go(SB), R3
+	BL		(R3)
+
 exit:
 	MOVD	$101, R0 // sys_exit
 	MOVD	$0, R1

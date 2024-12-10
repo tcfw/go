@@ -29,6 +29,7 @@ my $darwin = 0;
 my $openbsd = 0;
 my $netbsd = 0;
 my $dragonfly = 0;
+my $beehive = 0;
 my $arm = 0; # 64-bit value should use (even, odd)-pair
 my $libc = 0;
 my $tags = "";  # build tags
@@ -61,6 +62,10 @@ if($ARGV[0] eq "-netbsd") {
 }
 if($ARGV[0] eq "-dragonfly") {
 	$dragonfly = 1;
+	shift;
+}
+if($ARGV[0] eq "-beehive") {
+	$beehive = 1;
 	shift;
 }
 if($ARGV[0] eq "-arm") {

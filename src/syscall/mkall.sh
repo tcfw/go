@@ -122,6 +122,13 @@ aix_ppc64)
 	mksyscall="./mksyscall_libc.pl -aix"
 	mktypes="GOARCH=$GOARCH go tool cgo -godefs"
 	;;
+beehive_arm64)
+	mkerrors="cat ~/Projects/beehive/kernel/include/errno.h | ./mkerrors_beehive.pl"
+	mksyscall="./mksyscall.pl -beehive"
+	mktypes="GOARCH=$GOARCH go tool cgo -godefs"
+	mksysnum="cat ~/Projects/beehive/kernel/include/syscall_num.h | ./mksysnum_beehive.pl"
+	mkasm="go run mkasm.go"
+	;;
 darwin_amd64)
 	mkerrors="$mkerrors -m64"
 	mksyscall="./mksyscall.pl -darwin"

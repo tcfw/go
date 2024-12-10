@@ -20,6 +20,12 @@ const (
 
 	_SEGV_MAPERR = 0x1
 	_SEGV_ACCERR = 0x2
+
+	_SA_SIGINFO   = 0x40
+	_SA_RESTART   = 0x2
+	_SA_ONSTACK   = 0x1
+	_SA_USERTRAMP = 0x100
+	_SA_64REGSET  = 0x200
 )
 
 type siginfo struct {
@@ -86,6 +92,13 @@ type timeval struct {
 type timespec struct {
 	tv_sec  int64
 	tv_nsec int64
+}
+
+type sigactiont struct {
+	sa_handler uintptr // a union of two pointer
+	sa_mask    sigset
+	sa_flags   int32
+	pad_cgo_0  [4]byte
 }
 
 func (tv *timeval) set_usec(x int32) {
